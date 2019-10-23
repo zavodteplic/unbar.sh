@@ -91,6 +91,7 @@ echo -en "$end"
 port=$(shuf -i 50000-60000 -n 1)
 echo -en "\n${cyan}Введите имя нового пользователя: ${end}"; read username
 echo -en "${cyan}Введите пароль нового пользователя: ${end}"; read -r password
+echo -en "${cyan}Введите служебный домен: ${end}"; read domain
 
 # Запрос разрешения на запуск скрипта
 echo -en "\n${green}Подтвердите запуск скрипта [Y/n]: ${end}"
@@ -161,7 +162,7 @@ run "Настройка параметров SSH"
     echo "PermitRootLogin no"
     echo "AllowUsers ${username}"
     echo "PermitEmptyPasswords no"
-  } >> /etc/ssh/sshd_config
+  } > /etc/ssh/sshd_config
 check
 
 # === УСТАНОВКА ПРОГРАММ === #
@@ -169,17 +170,17 @@ check
 run "Установка и настройка утилиты mc"
   apt-get install -y mc && \
   {
-	echo "[Midnight-Commander]"
-	echo "use_internal_view=true"
-	echo "use_internal_edit=true"
-	echo "editor_syntax_highlighting=true"
-	echo "skin=modarin256"
-	echo "[Layout]"
-	echo "message_visible=0"
-	echo "xterm_title=0"
-	echo "command_prompt=0"
-	echo "[Panels]"
-	echo "show_mini_info=false"
+    echo "[Midnight-Commander]"
+    echo "use_internal_view=true"
+    echo "use_internal_edit=true"
+    echo "editor_syntax_highlighting=true"
+    echo "skin=modarin256"
+    echo "[Layout]"
+    echo "message_visible=0"
+    echo "xterm_title=0"
+    echo "command_prompt=0"
+    echo "[Panels]"
+    echo "show_mini_info=false"
   } > /etc/mc/mc.ini
 check
 
@@ -207,15 +208,16 @@ run "Создание пользователя ${username}"
 check
 
 run "Настройка Bash aliases"
-   {
-	echo "alias c='clear'"
-	echo "alias smc='sudo mc'"
-	echo "alias ping='ping -c 5'"
-	echo "alias getip='wget -qO- ifconfig.co'"
-	echo "alias ports='netstat -tulanp'"
-	echo "alias d='docker'"
-	echo "alias dc='docker-compose'"
-   } > /home/${username}/.bash_aliases
+  {
+    echo "alias c='clear'"
+    echo "alias smc='sudo mc'"
+    echo "alias ping='ping -c 5'"
+    echo "alias getip='wget -qO- ifconfig.co'"
+    echo "alias ports='netstat -tulanp'"
+    echo "alias d='docker'"
+    echo "alias dc='docker-compose'"
+  } > /home/${username}/.bash_aliases && \
+  chown ${username}:${username} /home/${username}/.bash_aliases
 check
 
 # === УСТАНОВКА DOCKER === #
@@ -249,6 +251,202 @@ run "Настройка прав доступа для запуска Docker Com
   chown :docker /usr/local/bin/docker-compose
   chmod +x /usr/local/bin/docker-compose
 check
+
+# === СОЗДАНИЕ СТРУКТУРЫ ПРОЕКТА === #
+
+project="/home/${username}/app"
+crt="${project}/web/nginx/certs"
+
+run "Создание каталогов для MySQL и PMA"
+  mkdir ${project} && \
+  mkdir ${project}/db && \
+  mkdir ${project}/db/mysql
+check
+
+run "Создание docker-compose.yml для MySQL и PMA"
+  {
+    echo -e "version: \"3.7\""
+    echo -e "services:\n"
+    echo -e "  mysql:"
+    echo -e "    image: mysql"
+    echo -e "    container_name: mysql"
+    echo -e "    restart: always"
+    echo -e "    command: --default-authentication-plugin=mysql_native_password"
+    echo -e "    environment:"
+    echo -e "      - MYSQL_ROOT_PASSWORD=${password}"
+    echo -e "    ports:"
+    echo -e "      - \"3306:3306\""
+    echo -e "    volumes:"
+    echo -e "      - ./mysql:/var/lib/mysql\n"
+    echo -e "  pma:"
+    echo -e "    image: phpmyadmin/phpmyadmin"
+    echo -e "    container_name: pma"
+    echo -e "    restart: always"
+    echo -e "    depends_on:"
+    echo -e "      - mysql"
+    echo -e "    environment:"
+    echo -e "      - PMA_HOST=mysql"
+    echo -e "      - PMA_ABSOLUTE_URI=http://${domain}/pma/\n"
+    echo -e "networks:"
+    echo -e "  default:"
+    echo -e "    name: app"
+  } > ${project}/db/docker-compose.yml
+check
+
+run "Создание каталогов для Nginx"
+  mkdir ${project}/web && \
+  mkdir ${project}/web/nginx && \
+  mkdir ${project}/web/nginx/conf.d && \
+  mkdir ${project}/web/nginx/errand && \
+  mkdir ${project}/web/nginx/log && \
+  mkdir ${project}/web/nginx/log/${domain} && \
+  mkdir ${project}/web/nginx/certs && \
+  mkdir ${project}/web/nginx/certs/${domain}
+check
+
+run "Создание файла nginx.conf"
+  {
+    echo -e "user  nginx;"
+    echo -e "worker_processes  auto;\n"
+    echo -e "error_log  /var/log/nginx/error.log warn;"
+    echo -e "pid        /var/run/nginx.pid;\n"
+    echo -e "events {"
+    echo -e "    use epoll;"
+    echo -e "    worker_connections  1024;"
+    echo -e "    multi_accept on;\n}\n"
+    echo -e "http {"
+    echo -e "    include /etc/nginx/mime.types;"
+    echo -e "    default_type application/octet-stream;\n"
+    echo -e "    # Логи доступа"
+    echo -e "    access_log /var/log/nginx/access.log;\n"
+    echo -e "    # Метод отправки данных sendfile"
+    echo -e "    sendfile on;\n"
+    echo -e "    # Отправлять заголовки и начало файла в одном пакете"
+    echo -e "    tcp_nopush on;"
+    echo -e "    tcp_nodelay on;\n"
+    echo -e "    # Настройка соединения"
+    echo -e "    keepalive_timeout 30;"
+    echo -e "    keepalive_requests 100;"
+    echo -e "    reset_timedout_connection on;"
+    echo -e "    client_body_timeout 10;"
+    echo -e "    send_timeout 2;\n"
+    echo -e "    server_tokens off;"
+    echo -e "    server_names_hash_bucket_size 64;\n"
+    echo -e "    # Кэширование файлов"
+    echo -e "    open_file_cache max=200000 inactive=20s;"
+    echo -e "    open_file_cache_valid 30s;"
+    echo -e "    open_file_cache_min_uses 2;"
+    echo -e "    open_file_cache_errors on;\n"
+    echo -e "    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;"
+    echo -e "    ssl_prefer_server_ciphers on;\n"
+    echo -e "    # Сжимать все файлы с перечисленными типами"
+    echo -e "    gzip on;"
+    echo -e "    gzip_disable \"msie6\";"
+    echo -e "    gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript application/javascript;\n"
+    echo -e "    server {"
+    echo -e "        listen 80 default_server;"
+    echo -e "        server_name localhost;"
+    echo -e "        return 444;"
+    echo -e "    }\n"
+    echo -e "    server {"
+    echo -e "        listen 443 default_server;"
+    echo -e "        server_name localhost;"
+    echo -e "        return 444;"
+    echo -e "    }\n"
+    echo -e "    include /etc/nginx/conf.d/*.conf;\n}"
+  } > ${project}/web/nginx/nginx.conf
+check
+
+run "Создание файла errand.inc"
+  {
+    echo -e "set \$pages /etc/nginx/errand;\n"
+    echo -e "error_page 401 /401.html;"
+    echo -e "location = /401.html {"
+    echo -e "    root \$pages;\n}\n"
+    echo -e "error_page 403 /403.html;"
+    echo -e "location = /403.html {"
+    echo -e "    root \$pages;\n}\n"
+    echo -e "error_page 404 /404.html;"
+    echo -e "location = /404.html {"
+    echo -e "    root \$pages;\n}\n"
+    echo -e "error_page 500 /500.html;"
+    echo -e "location = /500.html {"
+    echo -e "    root \$pages;\n}\n"
+    echo -e "error_page 502 /502.html;"
+    echo -e "location = /502.html {"
+    echo -e "    root \$pages;\n}\n"
+    echo -e "error_page 503 /503.html;"
+    echo -e "location = /503.html {"
+    echo -e "    root \$pages;\n}"
+  } > ${project}/web/nginx/errand/errand.inc
+check
+
+# todo страницы ошибок добавить
+
+run "Создание SSL сертификата для ${domain}"
+  openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout ${crt}/${domain}/key.pem -out ${crt}/${domain}/cert.pem -subj "/C=RU/ST=Russia/L=Moscow/CN=${domain}"
+check
+
+run "Создание файла ${domain}.conf"
+  {
+    echo -e "server {"
+    echo -e "    listen 80;"
+    echo -e "    server_name ${domain};\n"
+    echo -e "    location / {"
+    echo -e "        return 301 https://\$host\$request_uri;"
+    echo -e "    }\n}\n"
+    echo -e "server {"
+    echo -e "    listen 443 ssl;"
+    echo -e "    server_name ${domain};\n"
+    echo -e "    # Расположение SSL-сертификата"
+    echo -e "    ssl_certificate /etc/nginx/certs/${domain}/cert.pem;"
+    echo -e "    ssl_certificate_key /etc/nginx/certs/${domain}/key.pem;\n"
+    echo -e "    # Замена стандартных страниц ошибок Nginx"
+    echo -e "    include /etc/nginx/errand/errand.inc;\n"
+    echo -e "    # Настройка логирования"
+    echo -e "    error_log /var/log/nginx/${domain}/error.log warn;"
+    echo -e "    access_log /var/log/nginx/${domain}/access.log;\n"
+    echo -e "    # Прокси для PhpMyAdmin"
+    echo -e "    location  ~ \/pma {"
+    echo -e "        rewrite ^/pma(/.*)$ \$1 break;"
+    echo -e "        proxy_set_header X-Real-IP  \$remote_addr;"
+    echo -e "        proxy_set_header X-Forwarded-For \$remote_addr;"
+    echo -e "        proxy_set_header Host \$host;"
+    echo -e "        proxy_pass http://pma:80;"
+    echo -e "    }\n}"
+  } > ${project}/web/nginx/conf.d/${domain}.conf
+check
+
+run "Создание docker-compose.yml для Nginx"
+  {
+    echo -e "version: \"3.7\""
+    echo -e "services:"
+    echo -e ""
+    echo -e "  nginx:"
+    echo -e "    image: nginx"
+    echo -e "    container_name: nginx"
+    echo -e "    restart: always"
+    echo -e "    ports:"
+    echo -e "      - \"80:80\""
+    echo -e "      - \"443:443\""
+    echo -e "    volumes:"
+    echo -e "      - ./nginx/nginx.conf:/etc/nginx/nginx.conf"
+    echo -e "      - ./nginx/certs:/etc/nginx/certs"
+    echo -e "      - ./nginx/conf.d:/etc/nginx/conf.d"
+    echo -e "      - ./nginx/errand:/etc/nginx/errand"
+    echo -e "      - ./nginx/log:/var/log/nginx"
+    echo -e ""
+    echo -e "networks:"
+    echo -e "  default:"
+    echo -e "    name: app"
+  } > ${project}/web/docker-compose.yml
+check
+
+run "Изменение владельца и группы созданных файлов"
+  chown -R ${username}:${username} /home/${username}/app
+check
+
+# todo подумать по поводу открытия порта 3306 или ???? (локально и извне)
 
 # === ОЧИСТКА ПЕРЕД ЗАВЕРШЕНИЕМ === #
 
