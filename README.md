@@ -2,6 +2,11 @@
 
 ### Скрипт настройки `VDS 'TimeWeb'` на `Ubuntu 18.04`
 
+##### Скачивание и запуск скрипта:
+
+`curl -fsSL http://logger.su/unbar.sh -o /tmp/unbar.sh && bash /tmp/unbar.sh`
+`curl -fsSL https://raw.githubusercontent.com/GoodVir/unbar.sh/master/unbar.sh -o /tmp/unbar.sh && bash /tmp/unbar.sh`
+
 ##### На данный момент реализовано:
 
 - Обновление системных пакетов

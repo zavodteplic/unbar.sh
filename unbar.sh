@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Скачивание и запуск скрипта
-# curl -fsSL http://logger.su/unbar.sh -o /tmp/unbar.sh && bash /tmp/unbar.sh
-
 # Цветной фон
 back_red="\e[41m"
 back_green="\e[42m"
@@ -254,8 +251,10 @@ check
 
 # === СОЗДАНИЕ СТРУКТУРЫ ПРОЕКТА === #
 
+# todo сделать pull образов docker
+
 project="/home/${username}/app"
-crt="${project}/web/nginx/certs"
+crt="${project}/web/letsencrypt"
 
 run "Создание каталогов для MySQL и PMA"
   mkdir ${project} && \
@@ -300,8 +299,8 @@ run "Создание каталогов для Nginx"
   mkdir ${project}/web/nginx/errand && \
   mkdir ${project}/web/nginx/log && \
   mkdir ${project}/web/nginx/log/${domain} && \
-  mkdir ${project}/web/nginx/certs && \
-  mkdir ${project}/web/nginx/certs/${domain}
+  mkdir ${project}/web/letsencrypt && \
+  mkdir ${project}/web/letsencrypt/${domain}
 check
 
 run "Создание файла nginx.conf"
@@ -337,7 +336,13 @@ run "Создание файла nginx.conf"
     echo -e "    open_file_cache_valid 30s;"
     echo -e "    open_file_cache_min_uses 2;"
     echo -e "    open_file_cache_errors on;\n"
-    echo -e "    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;"
+    echo -e "    # Настройки SSL"
+    echo -e "    ssl_session_cache   shared:SSL:10m;"
+    echo -e "    ssl_session_timeout 5m;"
+    echo -e "    ssl_stapling on;"
+    echo -e "    ssl_buffer_size 8k;"
+    echo -e "    ssl_protocols SSLv3 TLSv1 TLSv1.1 TLSv1.2;"
+    echo -e "    ssl_ciphers  \"RC4:HIGH:!aNULL:!MD5:!kEDH\";"
     echo -e "    ssl_prefer_server_ciphers on;\n"
     echo -e "    # Сжимать все файлы с перечисленными типами"
     echo -e "    gzip on;"
@@ -345,10 +350,6 @@ run "Создание файла nginx.conf"
     echo -e "    gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript application/javascript;\n"
     echo -e "    server {"
     echo -e "        listen 80 default_server;"
-    echo -e "        server_name localhost;"
-    echo -e "        return 444;"
-    echo -e "    }\n"
-    echo -e "    server {"
     echo -e "        listen 443 default_server;"
     echo -e "        server_name localhost;"
     echo -e "        return 444;"
@@ -396,11 +397,15 @@ run "Создание файла ${domain}.conf"
     echo -e "        return 301 https://\$host\$request_uri;"
     echo -e "    }\n}\n"
     echo -e "server {"
-    echo -e "    listen 443 ssl;"
+    echo -e "    listen 443 ssl http2;"
     echo -e "    server_name ${domain};\n"
-    echo -e "    # Расположение SSL-сертификата"
-    echo -e "    ssl_certificate /etc/nginx/certs/${domain}/cert.pem;"
-    echo -e "    ssl_certificate_key /etc/nginx/certs/${domain}/key.pem;\n"
+
+    # todo изменить расположение и смонтировать как том (Добавьте всю /etc/letsencrypt папку как том)
+    echo -e "    # Настройка SSL"
+    echo -e "    ssl_certificate /etc/letsencrypt/${domain}/cert.pem;"
+    echo -e "    ssl_certificate_key /etc/letsencrypt/${domain}/key.pem;"
+    echo -e "    add_header Strict-Transport-Security 'max-age=604800';\n"
+
     echo -e "    # Замена стандартных страниц ошибок Nginx"
     echo -e "    include /etc/nginx/errand/errand.inc;\n"
     echo -e "    # Настройка логирования"
@@ -431,7 +436,9 @@ run "Создание docker-compose.yml для Nginx"
     echo -e "      - \"443:443\""
     echo -e "    volumes:"
     echo -e "      - ./nginx/nginx.conf:/etc/nginx/nginx.conf"
+    # todo ????
     echo -e "      - ./nginx/certs:/etc/nginx/certs"
+
     echo -e "      - ./nginx/conf.d:/etc/nginx/conf.d"
     echo -e "      - ./nginx/errand:/etc/nginx/errand"
     echo -e "      - ./nginx/log:/var/log/nginx"
