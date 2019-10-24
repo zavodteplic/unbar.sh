@@ -211,6 +211,7 @@ run "Настройка Bash aliases"
     echo "alias ping='ping -c 5'"
     echo "alias getip='wget -qO- ifconfig.co'"
     echo "alias ports='netstat -tulanp'"
+    echo "alias ll='ls -la'"
     echo "alias d='docker'"
     echo "alias dc='docker-compose'"
   } > /home/${username}/.bash_aliases && \
@@ -341,10 +342,6 @@ http {
     open_file_cache_min_uses 2;
     open_file_cache_errors on;
 
-    # Настройки SSL от certbot
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-
     # Сжимать файлы
     gzip on;
     gzip_disable "msie6";
@@ -462,24 +459,16 @@ run "Создание файла ${domain}.conf"
 cat > ${project}/web/nginx/conf.d/${domain}.conf << EOF
 server {
     listen 80;
-    server_name ${domain};
-
-    location / {
-        return 301 https://\$host\$request_uri;
-    }
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-}
-
-server {
-    listen 443 ssl http2;
+    listen 443 ssl;
     server_name ${domain};
 
     # Настройка SSL
     ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
+    ssl_stapling on;
+    ssl_buffer_size 8k;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
     add_header Strict-Transport-Security 'max-age=604800';
 
     # Замена стандартных страниц ошибок Nginx
@@ -488,6 +477,14 @@ server {
     # Настройка логирования
     error_log /var/log/nginx/${domain}/error.log warn;
     access_log /var/log/nginx/${domain}/access.log;
+
+    # Определяем, нужен ли редирект с www и http
+    if (\$server_port = 80) { set \$https_redirect 1; }
+    if (\$host ~ '^www\.') { set \$https_redirect 1; }
+    if (\$https_redirect = 1) { return 301 https://\$host\$request_uri; }
+
+     # Путь по которому certbot сможет проверить сервер на подлинность
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
 
     # Прокси для PhpMyAdmin
     location  ~ \/pma {
@@ -501,7 +498,7 @@ server {
 EOF
 check
 
-run "Создание docker-compose.yml для Nginx"
+run "Создание docker-compose.yml для Nginx и CertBot"
 cat > ${project}/web/docker-compose.yml << EOF
 version: "3.7"
 services:
@@ -510,7 +507,7 @@ services:
     image: nginx
     container_name: nginx
     restart: always
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait \$\${!}; done;'"
+    command: "/bin/sh -c 'while :; do sleep 6h & wait \$\${!}; nginx -s reload; done & nginx -g \\"daemon off;\\"'"
     ports:
       - "80:80"
       - "443:443"
@@ -526,8 +523,9 @@ services:
     image: certbot/certbot
     container_name: certbot
     restart: always
-    command: "/bin/sh -c 'while :; do sleep 6h & wait \$\${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait \$\${!}; done;'"
     volumes:
+      - ./certbot/log:/var/log/letsencrypt
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
 
@@ -543,13 +541,13 @@ run "Подготовка файлов для CertBot"
   curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/ssl-dhparams.pem > "${project}/web/certbot/conf/ssl-dhparams.pem"
 check
 
-run "Изменение владельца и группы созданных файлов"
-  chown -R ${username}:${username} ${project}
-check
-
 run "Создание SSL сертификата для ${domain}"
   mkdir -p ${project}/web/certbot/conf/live/${domain} && \
   openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/ST=Russia/L=Moscow/CN=${domain}"
+check
+
+run "Изменение владельца и группы созданных файлов"
+  chown -R ${username}:${username} ${project}
 check
 
 run "Загрузка используемых образов Docker"
@@ -587,6 +585,7 @@ echo -e "${red}Сохраните данные указанные выше!${end
 
 close "reboot"
 
+# todo https://gist.github.com/dancheskus/8d26823d0f5633e9dde63d150afb40b2
 # todo https://medium.com/@pentacent/nginx-and-lets-encrypt-with-docker-in-less-than-5-minutes-b4b8a60d3a71
 # todo подумать по поводу открытия порта 3306 или ???? (локально и извне)
 # todo logrotate поставить настроить

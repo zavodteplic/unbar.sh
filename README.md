@@ -27,6 +27,7 @@
     - `ping='ping -c 5'`
     - `getip='wget -qO- ifconfig.co'`
     - `ports='netstat -tulanp'`
+    - `ll='ls -la'`
     - `d='docker'`
     - `dc='docker-compose'`
 - Установка `Docker Engine - Community` и `containerd`
