@@ -291,9 +291,9 @@ EOF
 check
 
 run "Создание каталогов для Nginx"
-  mkdir -p ${project}/web/nginx/conf.d /web/nginx/errand && \
-  mkdir -p ${project}/web/nginx/log/${domain} && \
-  mkdir -p /etc/letsencrypt/${domain}
+  mkdir -p ${project}/web/nginx/conf.d && \
+  mkdir -p ${project}/web/nginx/errand && \
+  mkdir -p ${project}/web/nginx/log/${domain}
 check
 
 run "Создание файла nginx.conf"
@@ -341,14 +341,9 @@ http {
     open_file_cache_min_uses 2;
     open_file_cache_errors on;
 
-    # Настройки SSL
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 1440m;
-    ssl_stapling on;
-    ssl_buffer_size 8k;
-    ssl_protocols SSLv3 TLSv1 TLSv1.1 TLSv1.2;
-    ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
-    ssl_prefer_server_ciphers on;
+    # Настройки SSL от certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     # Сжимать файлы
     gzip on;
@@ -463,10 +458,6 @@ run "Создание страниц ошибок"
   page 503 "Service Unavailable"
 check
 
-run "Создание SSL сертификата для ${domain}"
-  openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/letsencrypt/${domain}/key.pem -out /etc/letsencrypt/${domain}/cert.pem -subj "/C=RU/ST=Russia/L=Moscow/CN=${domain}"
-check
-
 run "Создание файла ${domain}.conf"
 cat > ${project}/web/nginx/conf.d/${domain}.conf << EOF
 server {
@@ -476,6 +467,10 @@ server {
     location / {
         return 301 https://\$host\$request_uri;
     }
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
 }
 
 server {
@@ -483,8 +478,8 @@ server {
     server_name ${domain};
 
     # Настройка SSL
-    ssl_certificate /etc/letsencrypt/${domain}/cert.pem;
-    ssl_certificate_key /etc/letsencrypt/${domain}/key.pem;
+    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
     add_header Strict-Transport-Security 'max-age=604800';
 
     # Замена стандартных страниц ошибок Nginx
@@ -515,6 +510,7 @@ services:
     image: nginx
     container_name: nginx
     restart: always
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait \$\${!}; done;'"
     ports:
       - "80:80"
       - "443:443"
@@ -523,6 +519,17 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
       - ./nginx/errand:/etc/nginx/errand
       - ./nginx/log:/var/log/nginx
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    restart: always
+    command: "/bin/sh -c 'while :; do sleep 6h & wait \$\${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
 
 networks:
   default:
@@ -530,14 +537,26 @@ networks:
 EOF
 check
 
+run "Подготовка файлов для CertBot"
+  mkdir -p ${project}/web/certbot/conf && \
+  curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/tls_configs/options-ssl-nginx.conf > "${project}/web/certbot/conf/options-ssl-nginx.conf" && \
+  curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/ssl-dhparams.pem > "${project}/web/certbot/conf/ssl-dhparams.pem"
+check
+
 run "Изменение владельца и группы созданных файлов"
   chown -R ${username}:${username} ${project}
+check
+
+run "Создание SSL сертификата для ${domain}"
+  mkdir -p ${project}/web/certbot/conf/live/${domain} && \
+  openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/ST=Russia/L=Moscow/CN=${domain}"
 check
 
 run "Загрузка используемых образов Docker"
   docker pull mysql && \
   docker pull phpmyadmin/phpmyadmin && \
-  docker pull nginx
+  docker pull nginx && \
+  docker pull certbot/certbot
 check
 
 # === ОЧИСТКА ПЕРЕД ЗАВЕРШЕНИЕМ === #
@@ -568,5 +587,6 @@ echo -e "${red}Сохраните данные указанные выше!${end
 
 close "reboot"
 
+# todo https://medium.com/@pentacent/nginx-and-lets-encrypt-with-docker-in-less-than-5-minutes-b4b8a60d3a71
 # todo подумать по поводу открытия порта 3306 или ???? (локально и извне)
 # todo logrotate поставить настроить
