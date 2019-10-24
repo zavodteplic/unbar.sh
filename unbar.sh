@@ -360,7 +360,7 @@ EOF
 check
 
 run "Создание файла errand.inc"
-cat > ${project}/web/nginx/errand/errand.inc << EOF
+cat > "${project}/web/nginx/errand/errand.inc" << EOF
 set \$pages /etc/nginx/errand;
 
 error_page 401 /401.html;
@@ -397,9 +397,7 @@ check
 
 function page() {
 # Генерация HTML страниц ошибок
-rp_number=$1
-rp_description=$2
-rp_html=`cat << EOF
+cat > "${project}/web/nginx/errand/${1}.html" << EOF
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -433,17 +431,16 @@ rp_html=`cat << EOF
       padding: .6rem .5rem 0;
     }
   </style>
-  <title>${rp_number} ${rp_description}</title>
+  <title>${1} ${2}</title>
 </head>
 <body>
 <section>
-  <div style="font-size: 5rem">${rp_number}</div>
-  <div class="line">${rp_description}</div>
+  <div style="font-size: 5rem">${1}</div>
+  <div class="line">${2}</div>
 </section>
 </body>
 </html>
-EOF`
-echo ${rp_html} > ${project}/web/nginx/errand/${rp_number}.html
+EOF
 }
 
 run "Создание страниц ошибок"
@@ -456,11 +453,11 @@ run "Создание страниц ошибок"
 check
 
 run "Создание файла ${domain}.conf"
-cat > ${project}/web/nginx/conf.d/${domain}.conf << EOF
+cat > "${project}/web/nginx/conf.d/${domain}.conf" << EOF
 server {
     listen 80;
     listen 443 ssl;
-    server_name ${domain};
+    server_name ${domain} www.${domain};
 
     # Настройка SSL
     ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
@@ -499,7 +496,7 @@ EOF
 check
 
 run "Создание docker-compose.yml для Nginx и CertBot"
-cat > ${project}/web/docker-compose.yml << EOF
+cat > "${project}/web/docker-compose.yml" << EOF
 version: "3.7"
 services:
 
@@ -535,17 +532,6 @@ networks:
 EOF
 check
 
-run "Подготовка файлов для CertBot"
-  mkdir -p ${project}/web/certbot/conf && \
-  curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/tls_configs/options-ssl-nginx.conf > "${project}/web/certbot/conf/options-ssl-nginx.conf" && \
-  curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/ssl-dhparams.pem > "${project}/web/certbot/conf/ssl-dhparams.pem"
-check
-
-run "Создание SSL сертификата для ${domain}"
-  mkdir -p ${project}/web/certbot/conf/live/${domain} && \
-  openssl req -new -newkey rsa:4096 -days 365 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/ST=Russia/L=Moscow/CN=${domain}"
-check
-
 run "Изменение владельца и группы созданных файлов"
   chown -R ${username}:${username} ${project}
 check
@@ -555,6 +541,35 @@ run "Загрузка используемых образов Docker"
   docker pull phpmyadmin/phpmyadmin && \
   docker pull nginx && \
   docker pull certbot/certbot
+check
+
+# === НАСТРОЙКА SSL СЕРТИФИКАТОВ === #
+
+certbot_url="https://raw.githubusercontent.com/certbot/certbot/master"
+staging=1
+
+email_arg="--register-unsafely-without-email"
+if [ $staging != "0" ]; then staging_arg="--staging"; fi
+
+run "Создание директорий и файлов для CertBot"
+  mkdir -p ${project}/web/certbot/log && \
+  mkdir -p ${project}/web/certbot/conf/live/${domain} && \
+  mkdir -p ${project}/web/certbot/www && \
+  curl -s ${certbot_url}/certbot-nginx/certbot_nginx/tls_configs/options-ssl-nginx.conf > "${project}/web/certbot/conf/options-ssl-nginx.conf" && \
+  curl -s ${certbot_url}/certbot/ssl-dhparams.pem > "${project}/web/certbot/conf/ssl-dhparams.pem"
+check
+
+run "Выпуск фиктивного сертификати для запуска"
+  path="/etc/letsencrypt/live/${domain}"
+  docker-compose run --rm --entrypoint "openssl req -x509 -nodes -newkey rsa:1024 -days 1 -keyout '${path}/privkey.pem' -out '${path}/fullchain.pem' -subj '/C=RU/ST=Russia/L=Moscow/CN=${domain}'" certbot
+check
+
+run "Запуск Nginx"
+  docker-compose up -d nginx
+check
+
+run "Запрос сертификата Let's Encrypt для домена ${domain}"
+ docker-compose run --rm --entrypoint "certbot certonly --webroot -w /var/www/certbot --cert-name ${domain} $domain_args $staging_arg $email_arg --rsa-key-size 4096 --agree-tos --force-renewal --non-interactive" certbot
 check
 
 # === ОЧИСТКА ПЕРЕД ЗАВЕРШЕНИЕМ === #
