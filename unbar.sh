@@ -97,24 +97,24 @@ answer; if [[ $? -ne 0 ]]; then close; fi
 # === ОБНОВЛЕНИЕ СИСТЕМНЫХ ПАКЕТОВ === #
 
 run "Обновление системных пакетов"
-  apt-get update && \
-  apt-get upgrade -y && \
-  apt-get dist-upgrade -y
+  apt update && \
+  apt upgrade -y && \
+  apt dist-upgrade -y
 check
 
 # === НАСТРОЙКА ЧАСОВОГО ПОЯСА === #
 
 run "Настройка часового пояса"
   ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime  && \
-  apt-get install -y tzdata  && \
+  apt install -y tzdata  && \
   dpkg-reconfigure --frontend noninteractive tzdata  && \
-  apt-get install -y ntp
+  apt install -y ntp
 check
 
 # === НАСТРОЙКА ЯЗЫКА И РЕГИОНАЛЬНЫХ СТАНДАРТОВ === #
 
 run "Настройка языка и региональных стандартов"
-  apt-get install -y language-pack-ru
+  apt install -y language-pack-ru
   locale-gen ru_RU && \
   locale-gen ru_RU.UTF-8 && \
   update-locale LANG=ru_RU.UTF-8 && \
@@ -124,13 +124,13 @@ check
 # === НАСТРОЙКА ЗАЩИТЫ ОТ ПЕРЕБОРА ПАРОЛЕЙ === #
 
 run "Установка утилиты fail2ban"
-  apt-get install -y fail2ban
+  apt install -y fail2ban
 check
 
 # === НАСТРОЙКА FIREWALL === #
 
 run "Установка и настройка утилиты ufw"
-  apt-get install -y ufw && \
+  apt install -y ufw && \
   ufw default deny incoming && \
   ufw default allow outgoing && \
   ufw allow http && \
@@ -149,7 +149,7 @@ check
 # === НАСТРОЙКА SSH === #
 
 run "Настройка параметров SSH"
-  apt-get install -y sed && \
+  apt install -y sed && \
   sed -i "/Port\ /d" /etc/ssh/sshd_config && \
   sed -i "/PermitRootLogin\ /d" /etc/ssh/sshd_config && \
   sed -i "/AllowUsers\ /d" /etc/ssh/sshd_config && \
@@ -159,13 +159,13 @@ run "Настройка параметров SSH"
     echo "PermitRootLogin no"
     echo "AllowUsers ${username}"
     echo "PermitEmptyPasswords no"
-  } > /etc/ssh/sshd_config
+  } >> /etc/ssh/sshd_config
 check
 
 # === УСТАНОВКА ПРОГРАММ === #
 
 run "Установка и настройка утилиты mc"
-  apt-get install -y mc && \
+  apt install -y mc && \
   {
     echo "[Midnight-Commander]"
     echo "use_internal_view=true"
@@ -182,19 +182,19 @@ run "Установка и настройка утилиты mc"
 check
 
 run "Установка утилиты curl"
-  apt-get install -y curl
+  apt install -y curl
 check
 
 run "Установка утилиты wget"
-  apt-get install -y wget
+  apt install -y wget
 check
 
 run "Установка утилиты git"
-  apt-get install -y git
+  apt install -y git
 check
 
 run "Установка утилиты net-tools"
-  apt-get install -y net-tools
+  apt install -y net-tools
 check
 
 # === СОЗДАНИЕ НОВОГО ПОЛЬЗОВАТЕЛЯ === #
@@ -220,7 +220,7 @@ check
 # === УСТАНОВКА DOCKER === #
 
 run "Установка пакетов для использования хранилища поверх HTTPS"
-  apt-get install -y apt-transport-https ca-certificates gnupg-agent software-properties-common
+  apt install -y apt-transport-https ca-certificates gnupg-agent software-properties-common
 check
 
 run "Установка официального ключа GPG Docker"
@@ -229,11 +229,11 @@ check
 
 run "Добавление репозитория Docker"
   add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
-  apt-get update
+  apt update
 check
 
 run "Установка Docker Engine - Community и containerd"
-  apt-get install -y docker-ce docker-ce-cli containerd.io
+  apt install -y docker-ce docker-ce-cli containerd.io
 check
 
 run "Настройка прав доступа для запуска Docker"
@@ -245,221 +245,250 @@ run "Загрузка текущей стабильной версии Docker Co
 check
 
 run "Настройка прав доступа для запуска Docker Compose"
-  chown :docker /usr/local/bin/docker-compose
+  chown :docker /usr/local/bin/docker-compose && \
   chmod +x /usr/local/bin/docker-compose
 check
 
 # === СОЗДАНИЕ СТРУКТУРЫ ПРОЕКТА === #
 
-# todo сделать pull образов docker
-
 project="/home/${username}/app"
-crt="${project}/web/letsencrypt"
 
 run "Создание каталогов для MySQL и PMA"
-  mkdir ${project} && \
-  mkdir ${project}/db && \
-  mkdir ${project}/db/mysql
+  mkdir -p ${project}/db/mysql
 check
 
 run "Создание docker-compose.yml для MySQL и PMA"
-  {
-    echo -e "version: \"3.7\""
-    echo -e "services:\n"
-    echo -e "  mysql:"
-    echo -e "    image: mysql"
-    echo -e "    container_name: mysql"
-    echo -e "    restart: always"
-    echo -e "    command: --default-authentication-plugin=mysql_native_password"
-    echo -e "    environment:"
-    echo -e "      - MYSQL_ROOT_PASSWORD=${password}"
-    echo -e "    ports:"
-    echo -e "      - \"3306:3306\""
-    echo -e "    volumes:"
-    echo -e "      - ./mysql:/var/lib/mysql\n"
-    echo -e "  pma:"
-    echo -e "    image: phpmyadmin/phpmyadmin"
-    echo -e "    container_name: pma"
-    echo -e "    restart: always"
-    echo -e "    depends_on:"
-    echo -e "      - mysql"
-    echo -e "    environment:"
-    echo -e "      - PMA_HOST=mysql"
-    echo -e "      - PMA_ABSOLUTE_URI=http://${domain}/pma/\n"
-    echo -e "networks:"
-    echo -e "  default:"
-    echo -e "    name: app"
-  } > ${project}/db/docker-compose.yml
+cat > ${project}/db/docker-compose.yml << EOF
+version: "3.7"
+services:
+
+  mysql:
+    image: mysql
+    container_name: mysql
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      - MYSQL_ROOT_PASSWORD=${password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql:/var/lib/mysql
+
+  pma:
+    image: phpmyadmin/phpmyadmin
+    container_name: pma
+    restart: always
+    depends_on:
+      - mysql
+    environment:
+      - PMA_HOST=mysql
+      - PMA_ABSOLUTE_URI=https://${domain}/pma/
+
+networks:
+  default:
+    name: app
+EOF
 check
 
 run "Создание каталогов для Nginx"
-  mkdir ${project}/web && \
-  mkdir ${project}/web/nginx && \
-  mkdir ${project}/web/nginx/conf.d && \
-  mkdir ${project}/web/nginx/errand && \
-  mkdir ${project}/web/nginx/log && \
-  mkdir ${project}/web/nginx/log/${domain} && \
-  mkdir ${project}/web/letsencrypt && \
-  mkdir ${project}/web/letsencrypt/${domain}
+  mkdir -p ${project}/web/nginx/{conf.d,errand} && \
+  mkdir -p ${project}/web/nginx/log/${domain} && \
+  mkdir -p /etc/letsencrypt/${domain}
 check
 
 run "Создание файла nginx.conf"
-  {
-    echo -e "user  nginx;"
-    echo -e "worker_processes  auto;\n"
-    echo -e "error_log  /var/log/nginx/error.log warn;"
-    echo -e "pid        /var/run/nginx.pid;\n"
-    echo -e "events {"
-    echo -e "    use epoll;"
-    echo -e "    worker_connections  1024;"
-    echo -e "    multi_accept on;\n}\n"
-    echo -e "http {"
-    echo -e "    include /etc/nginx/mime.types;"
-    echo -e "    default_type application/octet-stream;\n"
-    echo -e "    # Логи доступа"
-    echo -e "    access_log /var/log/nginx/access.log;\n"
-    echo -e "    # Метод отправки данных sendfile"
-    echo -e "    sendfile on;\n"
-    echo -e "    # Отправлять заголовки и начало файла в одном пакете"
-    echo -e "    tcp_nopush on;"
-    echo -e "    tcp_nodelay on;\n"
-    echo -e "    # Настройка соединения"
-    echo -e "    keepalive_timeout 30;"
-    echo -e "    keepalive_requests 100;"
-    echo -e "    reset_timedout_connection on;"
-    echo -e "    client_body_timeout 10;"
-    echo -e "    send_timeout 2;\n"
-    echo -e "    server_tokens off;"
-    echo -e "    server_names_hash_bucket_size 64;\n"
-    echo -e "    # Кэширование файлов"
-    echo -e "    open_file_cache max=200000 inactive=20s;"
-    echo -e "    open_file_cache_valid 30s;"
-    echo -e "    open_file_cache_min_uses 2;"
-    echo -e "    open_file_cache_errors on;\n"
-    echo -e "    # Настройки SSL"
-    echo -e "    ssl_session_cache   shared:SSL:10m;"
-    echo -e "    ssl_session_timeout 5m;"
-    echo -e "    ssl_stapling on;"
-    echo -e "    ssl_buffer_size 8k;"
-    echo -e "    ssl_protocols SSLv3 TLSv1 TLSv1.1 TLSv1.2;"
-    echo -e "    ssl_ciphers  \"RC4:HIGH:!aNULL:!MD5:!kEDH\";"
-    echo -e "    ssl_prefer_server_ciphers on;\n"
-    echo -e "    # Сжимать все файлы с перечисленными типами"
-    echo -e "    gzip on;"
-    echo -e "    gzip_disable \"msie6\";"
-    echo -e "    gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript application/javascript;\n"
-    echo -e "    server {"
-    echo -e "        listen 80 default_server;"
-    echo -e "        listen 443 default_server;"
-    echo -e "        server_name localhost;"
-    echo -e "        return 444;"
-    echo -e "    }\n"
-    echo -e "    include /etc/nginx/conf.d/*.conf;\n}"
-  } > ${project}/web/nginx/nginx.conf
+cat > ${project}/web/nginx/nginx.conf << EOF
+user  nginx;
+worker_processes  auto;
+
+error_log  /var/log/nginx/error.log warn;
+pid        /var/run/nginx.pid;
+
+events {
+    use epoll;
+    worker_connections  1024;
+    multi_accept on;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Логи доступа
+    access_log /var/log/nginx/access.log;
+
+    # Метод отправки данных sendfile
+    sendfile on;
+
+    # Отправлять заголовки и начало файла в одном пакете
+    tcp_nopush on;
+    tcp_nodelay on;
+
+    # Настройка соединения
+    keepalive_timeout 30;
+    keepalive_requests 100;
+    reset_timedout_connection on;
+    client_body_timeout 10;
+    send_timeout 2;
+
+    # Параметры сервера
+    server_tokens off;
+    server_names_hash_bucket_size 64;
+
+    # Кэширование файлов
+    open_file_cache max=200000 inactive=20s;
+    open_file_cache_valid 30s;
+    open_file_cache_min_uses 2;
+    open_file_cache_errors on;
+
+    # Настройки SSL
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1440m;
+    ssl_stapling on;
+    ssl_buffer_size 8k;
+    ssl_protocols SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+    ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384";
+    ssl_prefer_server_ciphers on;
+
+    # Сжимать файлы
+    gzip on;
+    gzip_disable "msie6";
+    gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript application/javascript;
+
+    server {
+        listen 80 default_server;
+        listen 443 default_server;
+        server_name localhost;
+        return 444;
+    }
+
+    include /etc/nginx/conf.d/*.conf;
+}
+EOF
 check
 
 run "Создание файла errand.inc"
-  {
-    echo -e "set \$pages /etc/nginx/errand;\n"
-    echo -e "error_page 401 /401.html;"
-    echo -e "location = /401.html {"
-    echo -e "    root \$pages;\n}\n"
-    echo -e "error_page 403 /403.html;"
-    echo -e "location = /403.html {"
-    echo -e "    root \$pages;\n}\n"
-    echo -e "error_page 404 /404.html;"
-    echo -e "location = /404.html {"
-    echo -e "    root \$pages;\n}\n"
-    echo -e "error_page 500 /500.html;"
-    echo -e "location = /500.html {"
-    echo -e "    root \$pages;\n}\n"
-    echo -e "error_page 502 /502.html;"
-    echo -e "location = /502.html {"
-    echo -e "    root \$pages;\n}\n"
-    echo -e "error_page 503 /503.html;"
-    echo -e "location = /503.html {"
-    echo -e "    root \$pages;\n}"
-  } > ${project}/web/nginx/errand/errand.inc
+cat > ${project}/web/nginx/errand/errand.inc << EOF
+set \$pages /etc/nginx/errand;
+
+error_page 401 /401.html;
+location = /401.html {
+    root \$pages;
+}
+
+error_page 403 /403.html;
+location = /403.html {
+    root \$pages;
+}
+
+error_page 404 /404.html;
+location = /404.html {
+    root \$pages;
+}
+
+error_page 500 /500.html;
+location = /500.html {
+    root \$pages;
+}
+
+error_page 502 /502.html;
+location = /502.html {
+    root \$pages;
+}
+
+error_page 503 /503.html;
+location = /503.html {
+    root \$pages;
+}
+EOF
 check
 
 # todo страницы ошибок добавить
 
 run "Создание SSL сертификата для ${domain}"
-  openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout ${crt}/${domain}/key.pem -out ${crt}/${domain}/cert.pem -subj "/C=RU/ST=Russia/L=Moscow/CN=${domain}"
+  openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/letsencrypt/${domain}/key.pem -out /etc/letsencrypt/${domain}/cert.pem -subj "/C=RU/ST=Russia/L=Moscow/CN=${domain}"
 check
 
 run "Создание файла ${domain}.conf"
-  {
-    echo -e "server {"
-    echo -e "    listen 80;"
-    echo -e "    server_name ${domain};\n"
-    echo -e "    location / {"
-    echo -e "        return 301 https://\$host\$request_uri;"
-    echo -e "    }\n}\n"
-    echo -e "server {"
-    echo -e "    listen 443 ssl http2;"
-    echo -e "    server_name ${domain};\n"
+cat > ${project}/web/nginx/conf.d/${domain}.conf << EOF
+server {
+    listen 80;
+    server_name ${domain};
+
+    location / {
+        return 301 https://\$host\$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${domain};
 
     # todo изменить расположение и смонтировать как том (Добавьте всю /etc/letsencrypt папку как том)
-    echo -e "    # Настройка SSL"
-    echo -e "    ssl_certificate /etc/letsencrypt/${domain}/cert.pem;"
-    echo -e "    ssl_certificate_key /etc/letsencrypt/${domain}/key.pem;"
-    echo -e "    add_header Strict-Transport-Security 'max-age=604800';\n"
 
-    echo -e "    # Замена стандартных страниц ошибок Nginx"
-    echo -e "    include /etc/nginx/errand/errand.inc;\n"
-    echo -e "    # Настройка логирования"
-    echo -e "    error_log /var/log/nginx/${domain}/error.log warn;"
-    echo -e "    access_log /var/log/nginx/${domain}/access.log;\n"
-    echo -e "    # Прокси для PhpMyAdmin"
-    echo -e "    location  ~ \/pma {"
-    echo -e "        rewrite ^/pma(/.*)$ \$1 break;"
-    echo -e "        proxy_set_header X-Real-IP  \$remote_addr;"
-    echo -e "        proxy_set_header X-Forwarded-For \$remote_addr;"
-    echo -e "        proxy_set_header Host \$host;"
-    echo -e "        proxy_pass http://pma:80;"
-    echo -e "    }\n}"
-  } > ${project}/web/nginx/conf.d/${domain}.conf
+    # Настройка SSL
+    ssl_certificate /etc/letsencrypt/${domain}/cert.pem;
+    ssl_certificate_key /etc/letsencrypt/${domain}/key.pem;
+    add_header Strict-Transport-Security 'max-age=604800';
+
+    # Замена стандартных страниц ошибок Nginx
+    include /etc/nginx/errand/errand.inc;
+
+    # Настройка логирования
+    error_log /var/log/nginx/${domain}/error.log warn;
+    access_log /var/log/nginx/${domain}/access.log;
+
+    # Прокси для PhpMyAdmin
+    location  ~ \/pma {
+        rewrite ^/pma(/.*)$ \$1 break;
+        proxy_set_header X-Real-IP  \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header Host \$host;
+        proxy_pass http://pma:80;
+    }
+}
+EOF
 check
 
 run "Создание docker-compose.yml для Nginx"
-  {
-    echo -e "version: \"3.7\""
-    echo -e "services:"
-    echo -e ""
-    echo -e "  nginx:"
-    echo -e "    image: nginx"
-    echo -e "    container_name: nginx"
-    echo -e "    restart: always"
-    echo -e "    ports:"
-    echo -e "      - \"80:80\""
-    echo -e "      - \"443:443\""
-    echo -e "    volumes:"
-    echo -e "      - ./nginx/nginx.conf:/etc/nginx/nginx.conf"
-    # todo ????
-    echo -e "      - ./nginx/certs:/etc/nginx/certs"
+cat > ${project}/web/docker-compose.yml << EOF
+version: "3.7"
+services:
 
-    echo -e "      - ./nginx/conf.d:/etc/nginx/conf.d"
-    echo -e "      - ./nginx/errand:/etc/nginx/errand"
-    echo -e "      - ./nginx/log:/var/log/nginx"
-    echo -e ""
-    echo -e "networks:"
-    echo -e "  default:"
-    echo -e "    name: app"
-  } > ${project}/web/docker-compose.yml
+  nginx:
+    image: nginx
+    container_name: nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/errand:/etc/nginx/errand
+      - ./nginx/log:/var/log/nginx
+
+networks:
+  default:
+    name: app
+EOF
 check
 
 run "Изменение владельца и группы созданных файлов"
-  chown -R ${username}:${username} /home/${username}/app
+  chown -R ${username}:${username} ${project}
 check
 
-# todo подумать по поводу открытия порта 3306 или ???? (локально и извне)
+run "Загрузка используемых образов Docker"
+  docker pull mysql && \
+  docker pull phpmyadmin/phpmyadmin && \
+  docker pull nginx
+check
 
 # === ОЧИСТКА ПЕРЕД ЗАВЕРШЕНИЕМ === #
 
 run "Очистка пакетного менеджера"
-  apt-get autoremove -y && \
-  apt-get autoclean -y
+  apt autoremove -y && \
+  apt autoclean -y
 check
 
 # === ЗАВЕРШЕНИЕ РАБОТЫ СКРИПТА === #
@@ -482,3 +511,6 @@ echo -e "\n${red}[ВНИМАНИЕ] Система будет перезагру
 echo -e "${red}Сохраните данные указанные выше!${end}\n"
 
 close "reboot"
+
+# todo подумать по поводу открытия порта 3306 или ???? (локально и извне)
+# todo logrotate поставить настроить
