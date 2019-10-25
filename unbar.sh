@@ -155,6 +155,7 @@ run "Настройка параметров SSH"
   sed -i "/AllowUsers\ /d" /etc/ssh/sshd_config && \
   sed -i "/PermitEmptyPasswords\ /d" /etc/ssh/sshd_config && \
   {
+    echo -e "\n# unbar.sh"
     echo "Port ${port}"
     echo "PermitRootLogin no"
     echo "AllowUsers ${username}"
@@ -294,6 +295,7 @@ check
 run "Создание каталогов для Nginx"
   mkdir -p ${project}/web/nginx/conf.d && \
   mkdir -p ${project}/web/nginx/errand && \
+  mkdir -p ${project}/web/nginx/ssl && \
   mkdir -p ${project}/web/nginx/log/${domain}
 check
 
@@ -347,10 +349,12 @@ http {
     gzip_disable "msie6";
     gzip_types text/plain text/css application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript application/javascript;
 
+    # Сбросить доступ по IP
     server {
         listen 80 default_server;
         listen 443 default_server;
-        server_name localhost;
+        ssl_certificate /etc/nginx/ssl/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/privkey.pem;
         return 444;
     }
 
@@ -456,8 +460,11 @@ run "Создание файла ${domain}.conf"
 cat > "${project}/web/nginx/conf.d/${domain}.conf" << EOF
 server {
     listen 80;
-    listen 443 ssl;
+    listen 443 ssl http2;
     server_name ${domain} www.${domain};
+
+     # Путь по которому certbot сможет проверить сервер на подлинность
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
 
     # Настройка SSL
     ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
@@ -475,13 +482,10 @@ server {
     error_log /var/log/nginx/${domain}/error.log warn;
     access_log /var/log/nginx/${domain}/access.log;
 
-    # Определяем, нужен ли редирект с www и http
+    # Редирект с www и http
     if (\$server_port = 80) { set \$https_redirect 1; }
     if (\$host ~ '^www\.') { set \$https_redirect 1; }
     if (\$https_redirect = 1) { return 301 https://\$host\$request_uri; }
-
-     # Путь по которому certbot сможет проверить сервер на подлинность
-    location /.well-known/acme-challenge/ { root /var/www/certbot; }
 
     # Прокси для PhpMyAdmin
     location  ~ \/pma {
@@ -509,12 +513,13 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./nginx/errand:/etc/nginx/errand
-      - ./nginx/log:/var/log/nginx
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf    # Базовая конфигураци
+      - ./nginx/conf.d:/etc/nginx/conf.d            # Пользовательские конфигурации
+      - ./nginx/errand:/etc/nginx/errand            # Пользовательские страницы ошибок
+      - ./nginx/ssl:/etc/nginx/ssl                  # Фиктивный SSL для базовых настроек
+      - ./nginx/log:/var/log/nginx                  # Логи NGINX
+      - ./certbot/conf:/etc/letsencrypt             # Сертификаты Let’s Encrypt
+      - ./certbot/www:/var/www/certbot              # Файлы проверки Let’s Encrypt
 
   certbot:
     image: certbot/certbot
@@ -522,14 +527,30 @@ services:
     restart: always
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait \$\${!}; done;'"
     volumes:
-      - ./certbot/log:/var/log/letsencrypt
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
+      - ./certbot/log:/var/log/letsencrypt          # Логи CertBot Let’s Encrypt
+      - ./certbot/conf:/etc/letsencrypt             # Сертификаты Let’s Encrypt
+      - ./certbot/www:/var/www/certbot              # Файлы проверки Let’s Encrypt
 
 networks:
   default:
     name: app
 EOF
+check
+
+certbot_url="https://raw.githubusercontent.com/certbot/certbot/master"
+
+run "Создание директорий и файлов для CertBot"
+  mkdir -p ${project}/web/certbot/log && \
+  mkdir -p ${project}/web/certbot/conf/live/${domain} && \
+  mkdir -p ${project}/web/certbot/www && \
+  curl -s ${certbot_url}/certbot-nginx/certbot_nginx/tls_configs/options-ssl-nginx.conf > "${project}/web/certbot/conf/options-ssl-nginx.conf" && \
+  curl -s ${certbot_url}/certbot/ssl-dhparams.pem > "${project}/web/certbot/conf/ssl-dhparams.pem"
+check
+
+run "Генерация self-signed SSL certificate"
+  sed -i "/RANDFILE\ /d" /etc/ssl/openssl.cnf && \
+  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/nginx/ssl/privkey.pem -out ${project}/web/nginx/ssl/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=" && \
+  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=${domain}"
 check
 
 run "Изменение владельца и группы созданных файлов"
@@ -541,35 +562,6 @@ run "Загрузка используемых образов Docker"
   docker pull phpmyadmin/phpmyadmin && \
   docker pull nginx && \
   docker pull certbot/certbot
-check
-
-# === НАСТРОЙКА SSL СЕРТИФИКАТОВ === #
-
-certbot_url="https://raw.githubusercontent.com/certbot/certbot/master"
-staging=1
-
-email_arg="--register-unsafely-without-email"
-if [ $staging != "0" ]; then staging_arg="--staging"; fi
-
-run "Создание директорий и файлов для CertBot"
-  mkdir -p ${project}/web/certbot/log && \
-  mkdir -p ${project}/web/certbot/conf/live/${domain} && \
-  mkdir -p ${project}/web/certbot/www && \
-  curl -s ${certbot_url}/certbot-nginx/certbot_nginx/tls_configs/options-ssl-nginx.conf > "${project}/web/certbot/conf/options-ssl-nginx.conf" && \
-  curl -s ${certbot_url}/certbot/ssl-dhparams.pem > "${project}/web/certbot/conf/ssl-dhparams.pem"
-check
-
-run "Выпуск фиктивного сертификати для запуска"
-  path="/etc/letsencrypt/live/${domain}"
-  docker-compose run --rm --entrypoint "openssl req -x509 -nodes -newkey rsa:1024 -days 1 -keyout '${path}/privkey.pem' -out '${path}/fullchain.pem' -subj '/C=RU/ST=Russia/L=Moscow/CN=${domain}'" certbot
-check
-
-run "Запуск Nginx"
-  docker-compose up -d nginx
-check
-
-run "Запрос сертификата Let's Encrypt для домена ${domain}"
- docker-compose run --rm --entrypoint "certbot certonly --webroot -w /var/www/certbot --cert-name ${domain} $domain_args $staging_arg $email_arg --rsa-key-size 4096 --agree-tos --force-renewal --non-interactive" certbot
 check
 
 # === ОЧИСТКА ПЕРЕД ЗАВЕРШЕНИЕМ === #
@@ -600,7 +592,5 @@ echo -e "${red}Сохраните данные указанные выше!${end
 
 close "reboot"
 
-# todo https://gist.github.com/dancheskus/8d26823d0f5633e9dde63d150afb40b2
-# todo https://medium.com/@pentacent/nginx-and-lets-encrypt-with-docker-in-less-than-5-minutes-b4b8a60d3a71
 # todo подумать по поводу открытия порта 3306 или ???? (локально и извне)
 # todo logrotate поставить настроить
