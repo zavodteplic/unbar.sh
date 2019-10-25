@@ -150,10 +150,10 @@ check
 
 run "Настройка параметров SSH"
   apt install -y sed && \
-  sed -i "/Port\ /d" /etc/ssh/sshd_config && \
-  sed -i "/PermitRootLogin\ /d" /etc/ssh/sshd_config && \
-  sed -i "/AllowUsers\ /d" /etc/ssh/sshd_config && \
-  sed -i "/PermitEmptyPasswords\ /d" /etc/ssh/sshd_config && \
+  sed -i "/^Port/s/^/# /" /etc/ssh/sshd_config && \
+  sed -i "/^PermitRootLogin/s/^/# /" /etc/ssh/sshd_config && \
+  sed -i "/^AllowUsers/s/^/# /" /etc/ssh/sshd_config && \
+  sed -i "/^PermitEmptyPasswords/s/^/# /" /etc/ssh/sshd_config && \
   {
     echo -e "\n# unbar.sh"
     echo "Port ${port}"
@@ -548,7 +548,7 @@ run "Создание директорий и файлов для CertBot"
 check
 
 run "Генерация self-signed SSL certificate"
-  sed -i "/RANDFILE\ /d" /etc/ssl/openssl.cnf && \
+  sed -i "/^RANDFILE/s/^/# /" "/etc/ssl/openssl.cnf" && \
   openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/nginx/ssl/privkey.pem -out ${project}/web/nginx/ssl/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=" && \
   openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=${domain}"
 check
