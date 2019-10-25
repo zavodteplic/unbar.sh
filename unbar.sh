@@ -488,7 +488,7 @@ server {
     if (\$https_redirect = 1) { return 301 https://\$host\$request_uri; }
 
     # Прокси для PhpMyAdmin
-    location  ~ \/pma {
+    location /pma/ {
         rewrite ^/pma(/.*)$ \$1 break;
         proxy_set_header X-Real-IP  \$remote_addr;
         proxy_set_header X-Forwarded-For \$remote_addr;
@@ -549,8 +549,8 @@ check
 
 run "Генерация self-signed SSL certificate"
   sed -i "/^RANDFILE/s/^/# /" "/etc/ssl/openssl.cnf" && \
-  openssl req -new -newkey rsa:1024 -days 3650 -nodes -x509 -keyout ${project}/web/nginx/ssl/privkey.pem -out ${project}/web/nginx/ssl/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=" && \
-  openssl req -new -newkey rsa:1024 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=${domain}"
+  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/nginx/ssl/privkey.pem -out ${project}/web/nginx/ssl/fullchain.pem -subj "/C=RU" && \
+  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/CN=${domain}"
 check
 
 run "Изменение владельца и группы созданных файлов"
