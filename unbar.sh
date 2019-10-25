@@ -549,8 +549,8 @@ check
 
 run "Генерация self-signed SSL certificate"
   sed -i "/^RANDFILE/s/^/# /" "/etc/ssl/openssl.cnf" && \
-  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/nginx/ssl/privkey.pem -out ${project}/web/nginx/ssl/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=" && \
-  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=${domain}"
+  openssl req -new -newkey rsa:1024 -days 3650 -nodes -x509 -keyout ${project}/web/nginx/ssl/privkey.pem -out ${project}/web/nginx/ssl/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=" && \
+  openssl req -new -newkey rsa:1024 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/ST=/L=/O=/OU=/CN=${domain}"
 check
 
 run "Изменение владельца и группы созданных файлов"
