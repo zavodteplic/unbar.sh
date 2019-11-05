@@ -85,10 +85,13 @@ echo "          HDD: ${hdd} Mb"
 echo -en "$end"
 
 # Подготовка необходимых данных
-port=$(shuf -i 50000-60000 -n 1)
+port_ssh=$(shuf -i 50000-55000 -n 1)
+port_sql=$(shuf -i 55001-60000 -n 1)
+
 echo -en "\n${cyan}Введите имя нового пользователя: ${end}"; read username
 echo -en "${cyan}Введите пароль нового пользователя: ${end}"; read -r password
-echo -en "${cyan}Введите служебный домен: ${end}"; read domain
+echo -en "${cyan}Введите домен для PhpMyAdmin: ${end}"; read domain_pma
+echo -en "${cyan}Введите домен для DockerRegistry: ${end}"; read domain_rep
 
 # Запрос разрешения на запуск скрипта
 echo -en "\n${green}Подтвердите запуск скрипта [Y/n]: ${end}"
@@ -135,7 +138,8 @@ run "Установка и настройка утилиты ufw"
   ufw default allow outgoing && \
   ufw allow http && \
   ufw allow 443/tcp && \
-  ufw allow ${port}
+  ufw allow ${port_ssh} && \
+  ufw allow ${port_sql}
 check
 
 run "Включение ufw"
@@ -156,7 +160,7 @@ run "Настройка параметров SSH"
   sed -i "/^PermitEmptyPasswords/s/^/# /" /etc/ssh/sshd_config && \
   {
     echo -e "\n# unbar.sh"
-    echo "Port ${port}"
+    echo "Port ${port_ssh}"
     echo "PermitRootLogin no"
     echo "AllowUsers ${username}"
     echo "PermitEmptyPasswords no"
@@ -251,7 +255,7 @@ run "Настройка прав доступа для запуска Docker Com
   chmod +x /usr/local/bin/docker-compose
 check
 
-# === СОЗДАНИЕ СТРУКТУРЫ ПРОЕКТА === #
+# === СОЗДАНИЕ СТРУКТУРЫ СЕРВЕРА === #
 
 project="/home/${username}/app"
 
@@ -272,7 +276,7 @@ services:
     environment:
       - MYSQL_ROOT_PASSWORD=${password}
     ports:
-      - "3306:3306"
+      - "3306:${port_sql}"
     volumes:
       - ./mysql:/var/lib/mysql
 
@@ -284,7 +288,29 @@ services:
       - mysql
     environment:
       - PMA_HOST=mysql
-      - PMA_ABSOLUTE_URI=https://${domain}/pma/
+      - PMA_ABSOLUTE_URI=https://${domain_pma}/
+
+networks:
+  default:
+    name: app
+EOF
+check
+
+run "Создание каталогов для DockerRegistry"
+  mkdir -p ${project}/rep/registry
+check
+
+run "Создание docker-compose.yml для DockerRegistry"
+cat > ${project}/rep/docker-compose.yml << EOF
+version: "3.7"
+services:
+
+  registry:
+    image: registry
+    container_name: registry
+    restart: always
+    volumes:
+      - ./registry:/var/lib/registry
 
 networks:
   default:
@@ -296,7 +322,8 @@ run "Создание каталогов для Nginx"
   mkdir -p ${project}/web/nginx/conf.d && \
   mkdir -p ${project}/web/nginx/errand && \
   mkdir -p ${project}/web/nginx/ssl && \
-  mkdir -p ${project}/web/nginx/log/${domain}
+  mkdir -p ${project}/web/nginx/log/${domain_pma} && \
+  mkdir -p ${project}/web/nginx/log/${domain_rep}
 check
 
 run "Создание файла nginx.conf"
@@ -456,19 +483,19 @@ run "Создание страниц ошибок"
   page 503 "Service Unavailable"
 check
 
-run "Создание файла ${domain}.conf"
-cat > "${project}/web/nginx/conf.d/${domain}.conf" << EOF
+run "Создание файла ${domain_pma}.conf"
+cat > "${project}/web/nginx/conf.d/${domain_pma}.conf" << EOF
 server {
     listen 80;
     listen 443 ssl http2;
-    server_name ${domain} www.${domain};
+    server_name ${domain_pma} www.${domain_pma};
 
-     # Путь по которому certbot сможет проверить сервер на подлинность
+    # Путь по которому certbot сможет проверить сервер на подлинность
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
 
     # Настройка SSL
-    ssl_certificate /etc/letsencrypt/live/${domain}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${domain}/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${domain_pma}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain_pma}/privkey.pem;
     ssl_stapling on;
     ssl_buffer_size 8k;
     include /etc/letsencrypt/options-ssl-nginx.conf;
@@ -479,8 +506,8 @@ server {
     include /etc/nginx/errand/errand.inc;
 
     # Настройка логирования
-    error_log /var/log/nginx/${domain}/error.log warn;
-    access_log /var/log/nginx/${domain}/access.log;
+    error_log /var/log/nginx/${domain_pma}/error.log warn;
+    access_log /var/log/nginx/${domain_pma}/access.log;
 
     # Редирект с www и http
     if (\$server_port = 80) { set \$https_redirect 1; }
@@ -488,12 +515,79 @@ server {
     if (\$https_redirect = 1) { return 301 https://\$host\$request_uri; }
 
     # Прокси для PhpMyAdmin
-    location /pma/ {
-        rewrite ^/pma(/.*)$ \$1 break;
+    location / {
         proxy_set_header X-Real-IP  \$remote_addr;
         proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header Host \$host;
         proxy_pass http://pma:80;
+    }
+}
+EOF
+check
+
+run "Создание файла ${domain_rep}.conf"
+cat > "${project}/web/nginx/conf.d/${domain_rep}.conf" << EOF
+upstream docker-registry {
+    server registry:5000;
+}
+
+map \$upstream_http_docker_distribution_api_version \$docker_distribution_api_version {
+    '' 'registry/2.0';
+}
+
+server {
+    listen 80;
+    listen 443 ssl;
+    server_name ${domain_rep} www.${domain_rep};
+
+    # Путь по которому certbot сможет проверить сервер на подлинность
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+
+    # Настройка SSL
+    ssl_certificate /etc/letsencrypt/live/${domain_rep}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain_rep}/privkey.pem;
+    ssl_stapling on;
+    ssl_buffer_size 8k;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    add_header Strict-Transport-Security 'max-age=604800';
+
+    # Настройки для загрузки образов Docker
+    client_max_body_size 0;
+    chunked_transfer_encoding on;
+
+    # Замена стандартных страниц ошибок Nginx
+    include /etc/nginx/errand/errand.inc;
+
+    # Настройка логирования
+    error_log /var/log/nginx/${domain_rep}/error.log warn;
+    access_log /var/log/nginx/${domain_rep}/access.log;
+
+    # Редирект с www и http
+    if (\$server_port = 80) { set \$https_redirect 1; }
+    if (\$host ~ '^www\.') { set \$https_redirect 1; }
+    if (\$https_redirect = 1) { return 301 https://\$host\$request_uri; }
+
+    # Прокси для DockerRegistry
+    location /v2/ {
+      # Запретить соединения из докера 1.5 и ниже
+      if (\$http_user_agent ~ "^(docker\/1\.(3|4|5(?!\.[0-9]-dev))|Go ).*$" ) {
+        return 404;
+      }
+
+      # Базовая аутенфикация
+      # auth_basic "Registry realm";
+      # auth_basic_user_file /etc/nginx/conf.d/nginx.htpasswd;
+
+      # Добавляем заголовок если нужно
+      add_header 'Docker-Distribution-Api-Version' \$docker_distribution_api_version always;
+
+      proxy_pass                          http://docker-registry;
+      proxy_set_header  Host              \$http_host;
+      proxy_set_header  X-Real-IP         \$remote_addr;
+      proxy_set_header  X-Forwarded-For   \$proxy_add_x_forwarded_for;
+      proxy_set_header  X-Forwarded-Proto \$scheme;
+      proxy_read_timeout                  900;
     }
 }
 EOF
@@ -541,7 +635,8 @@ certbot_url="https://raw.githubusercontent.com/certbot/certbot/master"
 
 run "Создание директорий и файлов для CertBot"
   mkdir -p ${project}/web/certbot/log && \
-  mkdir -p ${project}/web/certbot/conf/live/${domain} && \
+  mkdir -p ${project}/web/certbot/conf/live/${domain_pma} && \
+  mkdir -p ${project}/web/certbot/conf/live/${domain_rep} && \
   mkdir -p ${project}/web/certbot/www && \
   curl -s ${certbot_url}/certbot-nginx/certbot_nginx/tls_configs/options-ssl-nginx.conf > "${project}/web/certbot/conf/options-ssl-nginx.conf" && \
   curl -s ${certbot_url}/certbot/ssl-dhparams.pem > "${project}/web/certbot/conf/ssl-dhparams.pem"
@@ -550,7 +645,8 @@ check
 run "Генерация self-signed SSL certificate"
   sed -i "/^RANDFILE/s/^/# /" "/etc/ssl/openssl.cnf" && \
   openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/nginx/ssl/privkey.pem -out ${project}/web/nginx/ssl/fullchain.pem -subj "/C=RU" && \
-  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain}/privkey.pem -out ${project}/web/certbot/conf/live/${domain}/fullchain.pem -subj "/C=RU/CN=${domain}"
+  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain_pma}/privkey.pem -out ${project}/web/certbot/conf/live/${domain_pma}/fullchain.pem -subj "/C=RU/CN=${domain_pma}" && \
+  openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 -keyout ${project}/web/certbot/conf/live/${domain_rep}/privkey.pem -out ${project}/web/certbot/conf/live/${domain_rep}/fullchain.pem -subj "/C=RU/CN=${domain_rep}"
 check
 
 run "Изменение владельца и группы созданных файлов"
@@ -561,7 +657,8 @@ run "Загрузка используемых образов Docker"
   docker pull mysql && \
   docker pull phpmyadmin/phpmyadmin && \
   docker pull nginx && \
-  docker pull certbot/certbot
+  docker pull certbot/certbot && \
+  docker pull registry
 check
 
 # === ОЧИСТКА ПЕРЕД ЗАВЕРШЕНИЕМ === #
@@ -577,20 +674,22 @@ ip=$(wget -qO- ifconfig.co)
 
 echo -e "${clr}${clr}${clr}${clr}${clr}${clr}${end}"
 
-echo -e "${green}  Пользователь: ${cyan}${username} ${end}"
-echo -e "${green}        Пароль: ${cyan}${password} ${end}"
-echo -e "${green}      Порт SSH: ${cyan}${port}${end}"
+echo -e "${green}  Пользователь: ${cyan}${username}${end}"
+echo -e "${green}        Пароль: ${cyan}${password}${end}"
+echo -e "${green}      Порт SSH: ${cyan}${port_ssh}${end}"
+echo -e "${green}      Порт SQL: ${cyan}${port_sql}${end}"
 echo -e "${green}    Внешний IP: ${cyan}${ip}${end}"
 
 echo -e "${clr}${clr}${clr}${clr}${clr}${clr}${end}"
 
-echo -e "\n${cyan}ssh ${username}@${ip} -p ${port}${end}"
-echo -e "${cyan}sh://${username}@${ip}:${port}/${end}"
+echo -e "\n${cyan}ssh ${username}@${ip} -p ${port_ssh}${end}"
+echo -e "${cyan}sh://${username}@${ip}:${port_ssh}/${end}"
+echo -e "\n${cyan}https://${domain_pma}${end}"
+echo -e "${cyan}https://${domain_rep}${end}"
 
 echo -e "\n${red}[ВНИМАНИЕ] Система будет перезагружена!${end}"
 echo -e "${red}Сохраните данные указанные выше!${end}\n"
 
 close "reboot"
 
-# todo подумать по поводу открытия порта 3306 или ???? (локально и извне)
 # todo logrotate поставить настроить
