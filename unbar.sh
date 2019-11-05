@@ -568,6 +568,9 @@ server {
     if (\$host ~ '^www\.') { set \$https_redirect 1; }
     if (\$https_redirect = 1) { return 301 https://\$host\$request_uri; }
 
+    # Редирект на версию 2
+    location / { return 301 https://\$host/v2/; }
+
     # Прокси для DockerRegistry
     location /v2/ {
       # Запретить соединения из докера 1.5 и ниже
