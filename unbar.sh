@@ -30,7 +30,7 @@ hdd=`df -m | awk '(NR == 2)' | awk '{print $2}'`
 
 function run() {
   # Печать информации о выполнении новой команды
-  echo -e "${purple}[RUN] ${1}...${end}"
+  echo -e "${brown}[RUN] ${1}...${end}"
 }
 
 function check() {
@@ -281,6 +281,11 @@ run "Настройка конфигурации ${domain_pma}.conf"
   sed -i "s/\[DOMAIN_PMA\]/${domain_pma}/g" ${project}/web/nginx/conf.d/pma.conf && \
   mv ${project}/web/nginx/conf.d/pma.conf ${project}/web/nginx/conf.d/${domain_pma}.conf && \
   mkdir -p ${project}/web/nginx/log/${domain_pma}
+check
+
+run "Генерация файла .htpasswd для ${domain_pma}"
+  mkdir -p ${project}/web/nginx/auth/${domain_pma} && \
+  htpasswd -cb ${project}/web/nginx/auth/${domain_pma}/.htpasswd ${username} ${password}
 check
 
 run "Настройка конфигурации ${domain_rep}.conf"

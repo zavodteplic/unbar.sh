@@ -68,15 +68,20 @@ run "Остановка docker-compose.yml"
 docker-compose down
 echo
 
+# Генерация фиктивных сертификатов при их отсутствии
+mkdir -p "./certbot/conf/live/${domain}"
+if [[ ! -e "./certbot/conf/live/${domain}/privkey.pem" && ! -e "./certbot/conf/live/${domain}/fullchain.pem" ]]; then
+  run "Генерация фиктивных сертификатов для запуска nginx"
+  docker-compose run --rm --entrypoint "openssl req -x509 -nodes -newkey rsa:1024 -days 1 -keyout '/etc/letsencrypt/live/${domain}/privkey.pem' -out '/etc/letsencrypt/live/${domain}/fullchain.pem' -subj '/CN=localhost'" certbot
+  echo
+fi
+
 run "Запуск nginx"
 docker-compose up --force-recreate -d nginx
 echo
 
 run "Очистка старых сертификатов"
-docker-compose run --rm --entrypoint "\
-  rm -Rf /etc/letsencrypt/live/${domain} && \
-  rm -Rf /etc/letsencrypt/archive/${domain} && \
-  rm -Rf /etc/letsencrypt/renewal/${domain}.conf" certbot
+docker-compose run --rm --entrypoint "rm -Rf /etc/letsencrypt/live/${domain} && rm -Rf /etc/letsencrypt/archive/${domain} && rm -Rf /etc/letsencrypt/renewal/${domain}.conf" certbot
 echo
 
 certbot_args="certbot certonly --webroot -w /var/www/certbot ${staging_arg} ${email_arg} --cert-name ${domain} -d ${domain} --rsa-key-size 4096 --agree-tos --force-renewal"
@@ -96,5 +101,3 @@ docker-compose up -d
 echo
 
 close
-
-# todo сделать генерацию фиктивных сертификатов для новых доменов
