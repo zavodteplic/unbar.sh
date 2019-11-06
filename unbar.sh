@@ -90,8 +90,8 @@ port_sql=$(shuf -i 55001-60000 -n 1)
 
 echo -en "\n${cyan}Введите имя нового пользователя: ${end}"; read username
 echo -en "${cyan}Введите пароль нового пользователя: ${end}"; read -r password
-echo -en "${cyan}Введите домен для PhpMyAdmin: ${end}"; read domain_pma
-echo -en "${cyan}Введите домен для DockerRegistry: ${end}"; read domain_rep
+echo -en "${cyan}Введите домен для PhpMyAdmin [pma.domain.ru]: ${end}"; read domain_pma
+echo -en "${cyan}Введите домен для DockerRegistry [rep.domain.ru]: ${end}"; read domain_rep
 
 # Запрос разрешения на запуск скрипта
 echo -en "\n${green}Подтвердите запуск скрипта [Y/n]: ${end}"
@@ -202,6 +202,10 @@ run "Установка утилиты net-tools"
   apt install -y net-tools
 check
 
+run "Установка утилиты apache2-utils"
+  apt install -y apache2-utils
+check
+
 # === СОЗДАНИЕ НОВОГО ПОЛЬЗОВАТЕЛЯ === #
 
 run "Создание пользователя ${username}"
@@ -268,26 +272,32 @@ run "Копирование папки проекта"
 check
 
 run "Замена переменных в db/docker-compose.yml"
-  sed -i "s/[PASSWORD]/${password}/g" ${project}/db/docker-compose.yml && \
-  sed -i "s/[PORT_SQL]/${port_sql}/g" ${project}/db/docker-compose.yml && \
-  sed -i "s/[DOMAIN_PMA]/${domain_pma}/g" ${project}/db/docker-compose.yml
+  sed -i "s/\[PASSWORD\]/${password}/g" ${project}/db/docker-compose.yml && \
+  sed -i "s/\[PORT_SQL\]/${port_sql}/g" ${project}/db/docker-compose.yml && \
+  sed -i "s/\[DOMAIN_PMA\]/${domain_pma}/g" ${project}/db/docker-compose.yml
 check
 
 run "Настройка конфигурации ${domain_pma}.conf"
-  sed -i "s/[DOMAIN_PMA]/${domain_pma}/g" ${project}/web/nginx/conf.d/pma.conf && \
+  sed -i "s/\[DOMAIN_PMA\]/${domain_pma}/g" ${project}/web/nginx/conf.d/pma.conf && \
   mv ${project}/web/nginx/conf.d/pma.conf ${project}/web/nginx/conf.d/${domain_pma}.conf && \
   mkdir -p ${project}/web/nginx/log/${domain_pma}
 check
 
 run "Настройка конфигурации ${domain_rep}.conf"
-  sed -i "s/[DOMAIN_REP]/${domain_rep}/g" ${project}/web/nginx/conf.d/rep.conf && \
+  sed -i "s/\[DOMAIN_REP\]/${domain_rep}/g" ${project}/web/nginx/conf.d/rep.conf && \
   mv ${project}/web/nginx/conf.d/rep.conf ${project}/web/nginx/conf.d/${domain_rep}.conf && \
   mkdir -p ${project}/web/nginx/log/${domain_rep}
+check
+
+run "Генерация файла .htpasswd для ${domain_rep}"
+  mkdir -p ${project}/web/nginx/auth/${domain_rep} && \
+  htpasswd -cb ${project}/web/nginx/auth/${domain_rep}/.htpasswd ${username} ${password}
 check
 
 certbot_url="https://raw.githubusercontent.com/certbot/certbot/master"
 
 run "Создание директорий и файлов для CertBot"
+  mkdir -p ${project}/web/nginx/ssl && \
   mkdir -p ${project}/web/certbot/log && \
   mkdir -p ${project}/web/certbot/conf/live/${domain_pma} && \
   mkdir -p ${project}/web/certbot/conf/live/${domain_rep} && \
@@ -315,9 +325,11 @@ run "Загрузка используемых образов Docker"
   docker pull registry
 check
 
-# === ДОБАВЛЕНИЕ СКРИПТА ПЕРВОГО ЗАПУСКА В АВТОЗАГРУЗКУ === #
-
-# todo run.sh
+run "Запуск контейнеров"
+  docker-compose -f ${project}/db/docker-compose.yml up -d && \
+  docker-compose -f ${project}/rep/docker-compose.yml up -d && \
+  docker-compose -f ${project}/web/docker-compose.yml up -d
+check
 
 # === ОЧИСТКА ПЕРЕД ЗАВЕРШЕНИЕМ === #
 
@@ -330,7 +342,7 @@ check
 
 ip=$(wget -qO- ifconfig.co)
 
-echo -e "${clr}${clr}${clr}${clr}${clr}${clr}${end}"
+echo -e "${clr}${clr}${clr}${clr}${clr}${clr}${end}\n"
 
 echo -e "${green}  Пользователь: ${cyan}${username}${end}"
 echo -e "${green}        Пароль: ${cyan}${password}${end}"
@@ -338,12 +350,12 @@ echo -e "${green}      Порт SSH: ${cyan}${port_ssh}${end}"
 echo -e "${green}      Порт SQL: ${cyan}${port_sql}${end}"
 echo -e "${green}    Внешний IP: ${cyan}${ip}${end}"
 
-echo -e "\n${cyan}ssh ${username}@${ip} -p ${port_ssh}${end}"
-echo -e "${cyan}sh://${username}@${ip}:${port_ssh}/${end}"
-echo -e "\n${cyan}https://${domain_pma}${end}"
-echo -e "${cyan}https://${domain_rep}${end}"
+echo -e "\n${cyan}  ssh ${username}@${ip} -p ${port_ssh}${end}"
+echo -e "${cyan}  sh://${username}@${ip}:${port_ssh}/${end}"
+echo -e "\n${cyan}  https://${domain_pma}${end}"
+echo -e "${cyan}  https://${domain_rep}${end}"
 
-echo -e "${clr}${clr}${clr}${clr}${clr}${clr}${end}"
+echo -e "\n${clr}${clr}${clr}${clr}${clr}${clr}${end}"
 
 echo -e "\n${red}[ВНИМАНИЕ] Система будет перезагружена!${end}"
 echo -e "${red}Сохраните данные указанные выше!${end}\n"

@@ -19,6 +19,7 @@
     - `wget`
     - `git`
     - `net-tools`
+    - `apache2-utils`
 - Настройка параметров `SSH`
 - Создание пользователя c правами `sudo`
 - Настройка `Bash aliases`:
@@ -36,6 +37,7 @@
 - Настройка контейнера `Nginx` и `CertBot`
 - Настройка контейнера `MySQL` и `PHPMyAdmin`
 - Настройка контейнера `DockerRegistry`
+- `~/app/web/letsencrypt.sh` - скрипт получения сертификатов `Let’s Encrypt`
 
 ##### Что возможно будет реализовано в будущем:
 
