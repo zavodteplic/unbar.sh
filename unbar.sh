@@ -314,7 +314,8 @@ run "Генерация self-signed SSL certificate"
 check
 
 run "Изменение владельца и группы созданных файлов"
-  chown -R ${username}:${username} ${project}
+  chown -R ${username}:${username} ${project} && \
+  chmod u+x ${project}/web/letsencrypt.sh
 check
 
 run "Загрузка используемых образов Docker"
