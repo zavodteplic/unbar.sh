@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Цветной фон
 back_red="\e[41m"
@@ -255,33 +255,35 @@ run "Настройка прав доступа для запуска Docker Com
   chmod +x /usr/local/bin/docker-compose
 check
 
-# todo === СОЗДАНИЕ СТРУКТУРЫ СЕРВЕРА === #
+# === СОЗДАНИЕ СТРУКТУРЫ СЕРВЕРА === #
 
 project="/home/${username}/app"
 
-#run "Создание каталогов для MySQL и PMA"
-#  mkdir -p ${project}/db/mysql
-#check
-
-# todo замена переменных в файлах
-
-run "Создание каталогов для DockerRegistry"
-  mkdir -p ${project}/rep/registry
+run "Клонирование репозитория UNBAR.SH"
+  git clone https://github.com/goodvir/unbar.sh /tmp/unbar
 check
 
-#run "Создание страниц ошибок"
-#  page 403 "Forbidden" && \
-#  page 404 "Not Found" && \
-#  page 500 "Internal Server Error" && \
-#  page 502 "Bad Gateway" && \
-#  page 503 "Service Unavailable"
-#check
+run "Копирование папки проекта"
+  cp -R "/tmp/unbar/app" ${project}
+check
 
-# todo run "Создание файла ${domain_pma}.conf"
+run "Замена переменных в db/docker-compose.yml"
+  sed -i "s/[PASSWORD]/${password}/g" ${project}/db/docker-compose.yml && \
+  sed -i "s/[PORT_SQL]/${port_sql}/g" ${project}/db/docker-compose.yml && \
+  sed -i "s/[DOMAIN_PMA]/${domain_pma}/g" ${project}/db/docker-compose.yml
+check
 
-# todo run "Создание файла ${domain_rep}.conf"
+run "Настройка конфигурации ${domain_pma}.conf"
+  sed -i "s/[DOMAIN_PMA]/${domain_pma}/g" ${project}/web/nginx/conf.d/pma.conf && \
+  mv ${project}/web/nginx/conf.d/pma.conf ${project}/web/nginx/conf.d/${domain_pma}.conf && \
+  mkdir -p ${project}/web/nginx/log/${domain_pma}
+check
 
-# todo run "Создание docker-compose.yml для Nginx и CertBot"
+run "Настройка конфигурации ${domain_rep}.conf"
+  sed -i "s/[DOMAIN_REP]/${domain_rep}/g" ${project}/web/nginx/conf.d/rep.conf && \
+  mv ${project}/web/nginx/conf.d/rep.conf ${project}/web/nginx/conf.d/${domain_rep}.conf && \
+  mkdir -p ${project}/web/nginx/log/${domain_rep}
+check
 
 certbot_url="https://raw.githubusercontent.com/certbot/certbot/master"
 
@@ -312,6 +314,10 @@ run "Загрузка используемых образов Docker"
   docker pull certbot/certbot && \
   docker pull registry
 check
+
+# === ДОБАВЛЕНИЕ СКРИПТА ПЕРВОГО ЗАПУСКА В АВТОЗАГРУЗКУ === #
+
+# todo run.sh
 
 # === ОЧИСТКА ПЕРЕД ЗАВЕРШЕНИЕМ === #
 
@@ -345,3 +351,4 @@ echo -e "${red}Сохраните данные указанные выше!${end
 close "reboot"
 
 # todo logrotate поставить настроить
+# todo Отключить логи докера по умолчанию

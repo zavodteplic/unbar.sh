@@ -4,7 +4,7 @@
 
 ##### Запуск скрипта:
 
-`wget -O - https://raw.githubusercontent.com/GoodVir/unbar.sh/master/unbar.sh > /tmp/unbar.sh && bash /tmp/unbar.sh`
+`wget -O - https://raw.githubusercontent.com/goodvir/unbar.sh/master/unbar.sh > /tmp/unbar.sh && bash /tmp/unbar.sh`
 
 ##### На данный момент реализовано:
 
@@ -35,10 +35,10 @@
 - Очистка пакетного менеджера
 - Настройка контейнера `Nginx` и `CertBot`
 - Настройка контейнера `MySQL` и `PHPMyAdmin`
+- Настройка контейнера `DockerRegistry`
 
 ##### Что возможно будет реализовано в будущем:
 
-- Частный репозиторий `Docker`
 - Автоматический деплой из частного репозитория
 - Интерфейс для управления и настройки
 
