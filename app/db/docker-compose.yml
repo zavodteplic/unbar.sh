@@ -10,6 +10,11 @@ services:
       - MYSQL_ROOT_PASSWORD=[PASSWORD]
     ports:
       - "3306:[PORT_SQL]"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
     volumes:
       - ./mysql:/var/lib/mysql
 
@@ -22,6 +27,11 @@ services:
     environment:
       - PMA_HOST=mysql
       - PMA_ABSOLUTE_URI=https://[DOMAIN_PMA]/
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
 
 networks:
   default:

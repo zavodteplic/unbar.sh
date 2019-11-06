@@ -5,6 +5,11 @@ services:
     image: registry
     container_name: registry
     restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
     volumes:
       - ./registry:/var/lib/registry
 
