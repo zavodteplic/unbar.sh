@@ -9,7 +9,7 @@ services:
     environment:
       - MYSQL_ROOT_PASSWORD=[PASSWORD]
     ports:
-      - "3306:[PORT_SQL]"
+      - "[PORT_SQL]:3306"
     logging:
       driver: "json-file"
       options:
